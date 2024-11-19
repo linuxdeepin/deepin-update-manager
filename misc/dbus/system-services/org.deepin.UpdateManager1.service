@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.deepin.UpdateManager1
+Exec=/usr/libexec/deepin-update-manager
+User=deepin-update-manager
+SystemdService=deepin-update-manager.service
