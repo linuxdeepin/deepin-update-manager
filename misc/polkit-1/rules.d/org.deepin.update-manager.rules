@@ -1,9 +1,8 @@
 polkit.addRule(function(action, subject) {
-    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+    if (action.id == "org.freedesktop.systemd1.manage-unit-files" &&
         /^dum-upgrade@.+\.service$/.test(action.lookup("unit")) &&
         action.lookup("verb") == "start" &&
-        subject.local == true &&
-        subject.isInGroup("sudo")) {
+        subject.user == "deepin-update-manager") {
             return polkit.Result.YES;
     }
 

@@ -10,6 +10,10 @@ struct Progress {
     QString stage;
     float percent;
 };
+Q_DECLARE_METATYPE(Progress)
+
+QDBusArgument &operator<<(QDBusArgument &argument, const Progress &progress);
+const QDBusArgument &operator>>(const QDBusArgument &argument, Progress &progress);
 
 class ManagerAdaptor : public QObject
 {
@@ -28,8 +32,8 @@ public slots:
     Q_SCRIPTABLE void upgrade(const QDBusMessage &message);
 
 public slots:
-    bool upgradable();
-    QString state();
+    bool upgradable() const;
+    QString state() const;
 
 signals:
     void upgradableChanged(bool upgradable);
@@ -44,6 +48,7 @@ private:
     QLocalServer *m_server;
     org::freedesktop::systemd1::Manager *m_systemdManager;
     org::freedesktop::systemd1::Unit *m_dumUpgradeUnit;
+    QString m_remoteBranch;
 
     bool m_upgradable;
     QString m_state;
