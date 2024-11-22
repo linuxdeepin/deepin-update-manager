@@ -6,9 +6,11 @@ Rules-Requires-Root: no
 Build-Depends:
  cmake,
  debhelper-compat (= 13),
+ libdbus-1-dev,
  libexpected-dev,
  libfmt-dev,
  libspdlog-dev,
+ libssl-dev,
  libsystemd-dev,
  libuv1-dev,
  systemd-dev,
@@ -23,4 +25,4 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Description: <insert up to 60 chars description>
- <Insert long description, indented with spaces.>
+  <Insert long description, indented with spaces.>

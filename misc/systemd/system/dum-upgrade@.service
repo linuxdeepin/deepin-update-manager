@@ -3,7 +3,7 @@ Description=deepin Immutable Upgrade
 
 [Service]
 Type=oneshot
-ExecStart=/sbin/deepin-immutable-ctl ota upgrade --version=%i
+ExecStart=/sbin/deepin-immutable-ctl ota upgrade --version=%I
 #Sockets=dum-upgrade-stdout.socket
 #StandardOutput=fd:dum-upgrade-stdout
 #StandardError=fd:dum-upgrade-stdout
