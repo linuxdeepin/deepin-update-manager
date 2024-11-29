@@ -3,6 +3,8 @@
 #include <QDBusObjectPath>
 #include <QLocalSocket>
 
+static const QString DBUS_PATH = "/org/freedesktop/UpdateManager1";
+
 static const QString SYSTEMD1_SERVICE = "org.freedesktop.systemd1";
 static const QString SYSTEMD1_MANAGER_PATH = "/org/freedesktop/systemd1";
 
@@ -41,6 +43,7 @@ ManagerAdaptor::ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, 
     , m_server(new QLocalServer(this))
     , m_systemdManager(new org::freedesktop::systemd1::Manager(
           SYSTEMD1_SERVICE, SYSTEMD1_MANAGER_PATH, bus, this))
+    , m_dumUpgradeUnit(nullptr)
     , m_upgradable(false)
     , m_state(STATE_IDEL)
 {
@@ -57,6 +60,13 @@ ManagerAdaptor::ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, 
                 parseUpgradeStdoutLine(line);
             }
         });
+    });
+
+    connect(this, &ManagerAdaptor::stateChanged, this, [this](const QString &state) {
+        sendPropertyChanged("state", state);
+    });
+    connect(this, &ManagerAdaptor::upgradableChanged, this, [this](bool upgradable) {
+        sendPropertyChanged("upgradable", upgradable);
     });
 }
 
@@ -167,10 +177,23 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
         return;
     }
 
+    if (m_dumUpgradeUnit) {
+        m_bus.disconnect(SYSTEMD1_SERVICE,
+                         m_dumUpgradeUnit->path(),
+                         "org.freedesktop.DBus.Properties",
+                         "PropertiesChanged",
+                         this,
+                         SLOT(onDumUpgradeUnitPropertiesChanged(const QString &,
+                                                                const QVariantMap &,
+                                                                const QStringList &)));
+        m_dumUpgradeUnit->deleteLater();
+    }
+
     auto unitPath = reply.value();
     m_dumUpgradeUnit = new org::freedesktop::systemd1::Unit(SYSTEMD1_SERVICE,
                                                             unitPath.path(),
-                                                            QDBusConnection::systemBus());
+                                                            QDBusConnection::systemBus(),
+                                                            this);
 
     auto activeState = m_dumUpgradeUnit->activeState();
     if (activeState == "active" || activeState == "activating" || activeState == "deactivating") {
@@ -186,7 +209,15 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
                   SLOT(onDumUpgradeUnitPropertiesChanged(const QString &,
                                                          const QVariantMap &,
                                                          const QStringList &)));
-    m_dumUpgradeUnit->Start("replace");
+
+    auto reply1 = m_dumUpgradeUnit->Start("replace");
+    reply1.waitForFinished();
+    if (reply1.isError()) {
+        m_bus.send(message.createErrorReply(
+            QDBusError::InternalError,
+            QString("Start %1 failed: %2").arg(unit).arg(reply1.error().message())));
+        return;
+    }
 }
 
 bool ManagerAdaptor::upgradable() const
@@ -215,27 +246,29 @@ void ManagerAdaptor::onDumUpgradeUnitPropertiesChanged(const QString &interfaceN
         } else if (activeState == "failed") {
             m_state = STATE_FAILED;
             emit stateChanged(m_state);
+        } else if (activeState == "inactive") {
+            if (m_state == STATE_UPGRADING) {
+                m_state = STATE_SUCCESS;
+                emit stateChanged(m_state);
 
-            m_bus.disconnect(SYSTEMD1_SERVICE,
-                             m_dumUpgradeUnit->path(),
-                             "org.freedesktop.DBus.Properties",
-                             "PropertiesChanged",
-                             this,
-                             SLOT(onDumUpgradeUnitPropertiesChanged(const QString &,
-                                                                    const QVariantMap &,
-                                                                    const QStringList &)));
+                QTimer::singleShot(1000, this, [this]() {
+                    if (m_state == STATE_SUCCESS) {
+                        m_upgradable = false;
+                        emit upgradableChanged(m_upgradable);
+
+                        m_state = STATE_IDEL;
+                        emit stateChanged(m_state);
+                    };
+                });
+            } else if (m_state != STATE_IDEL) {
+                m_upgradable = false;
+                emit upgradableChanged(m_upgradable);
+
+                m_state = STATE_IDEL;
+                emit stateChanged(m_state);
+            }
         } else {
-            m_state = STATE_IDEL;
-            emit stateChanged(m_state);
-
-            m_bus.disconnect(SYSTEMD1_SERVICE,
-                             m_dumUpgradeUnit->path(),
-                             "org.freedesktop.DBus.Properties",
-                             "PropertiesChanged",
-                             this,
-                             SLOT(onDumUpgradeUnitPropertiesChanged(const QString &,
-                                                                    const QVariantMap &,
-                                                                    const QStringList &)));
+            qWarning() << "unknown activeState:" << activeState;
         }
     }
 }
@@ -251,5 +284,20 @@ void ManagerAdaptor::parseUpgradeStdoutLine(const QByteArray &line)
         QString stage = tmp.sliced(colonIdx + 1).trimmed().toByteArray();
 
         emit progress({ stage, percentStr.toFloat() });
+    }
+}
+
+void ManagerAdaptor::sendPropertyChanged(const QString &property, const QVariant &value)
+{
+    auto msg = QDBusMessage::createSignal(ADAPTOR_PATH,
+                                          "org.freedesktop.DBus.Properties",
+                                          "PropertiesChanged");
+    msg << "org.deepin.UpdateManager1";
+    msg << QVariantMap{ { property, value } };
+    msg << QStringList{};
+
+    auto res = m_bus.send(msg);
+    if (!res) {
+        qWarning() << "sendPropertyChanged failed";
     }
 }

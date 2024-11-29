@@ -27,6 +27,7 @@ int main(int argc, char *argv[])
 {
     auto fds = getFds();
     if (!fds.contains(DUM_UPGRADE_STDOUT)) {
+        qWarning() << DUM_UPGRADE_STDOUT << " not found";
         return 1;
     }
 
@@ -38,9 +39,7 @@ int main(int argc, char *argv[])
 
     ManagerAdaptor adaptor(dumUpgradeStdoutFd, connection);
     connection.registerService("org.deepin.UpdateManager1");
-    connection.registerObject("/org/deepin/UpdateManager1",
-                              &adaptor,
-                              QDBusConnection::ExportScriptableContents);
+    connection.registerObject(ADAPTOR_PATH, &adaptor, QDBusConnection::ExportScriptableContents);
 
     return a.exec();
 }
