@@ -6,6 +6,8 @@
 #include <QLocalServer>
 #include <QObject>
 
+#define ADAPTOR_PATH "/org/deepin/UpdateManager1"
+
 struct Progress {
     QString stage;
     float percent;
@@ -19,8 +21,8 @@ class ManagerAdaptor : public QObject
 {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.deepin.UpdateManager1")
-    Q_PROPERTY(bool upgradable READ upgradable NOTIFY upgradableChanged)
-    Q_PROPERTY(QString state READ state NOTIFY stateChanged)
+    Q_PROPERTY(bool upgradable READ upgradable NOTIFY upgradableChanged SCRIPTABLE true)
+    Q_PROPERTY(QString state READ state NOTIFY stateChanged SCRIPTABLE true)
 
 public:
     ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, QObject *parent = nullptr);
@@ -60,4 +62,5 @@ private slots:
 
 private:
     void parseUpgradeStdoutLine(const QByteArray &line);
+    void sendPropertyChanged(const QString &property, const QVariant &value);
 };
