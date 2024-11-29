@@ -7,12 +7,8 @@ Build-Depends:
  cmake,
  debhelper-compat (= 13),
  libdbus-1-dev,
- libexpected-dev,
- libfmt-dev,
- libspdlog-dev,
  libssl-dev,
  libsystemd-dev,
- libuv1-dev,
  systemd-dev,
 Standards-Version: 4.7.0
 Homepage: <insert the upstream URL, if relevant>
