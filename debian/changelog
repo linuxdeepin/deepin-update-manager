@@ -1,5 +1,5 @@
-deepin-update-manager (1.0.0) UNRELEASED; urgency=medium
+deepin-update-manager (1.0.1) unstable; urgency=medium
 
   * Initial release.
 
- -- zsien <quezhiyong@deepin.org>  Wed, 23 Oct 2024 17:21:42 +0800
+ -- zsien <quezhiyong@deepin.org>  Tue, 03 Dec 2024 10:29:24 +0800
