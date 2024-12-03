@@ -1,12 +1,10 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Source: <url://example.com>
 Upstream-Name: deepin-update-manager
-Upstream-Contact: <preferred name and address to reach the upstream project>
 
 Files:
  *
 Copyright:
- 2024 zsien <quezhiyong@deepin.org>
+ 2024 UnionTech Software Technology Co., Ltd.
 License: GPL-3.0+
 
 License: GPL-3.0+
