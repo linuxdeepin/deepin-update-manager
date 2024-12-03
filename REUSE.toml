@@ -1,7 +1,7 @@
 version = 1
-SPDX-PackageName = "dde-cooperation"
-SPDX-PackageSupplier = "Deepin Technology Co., Ltd."
-SPDX-PackageDownloadLocation = "https://github.com/linuxdeepin/dde-cooperation"
+SPDX-PackageName = "deepin-update-manager"
+SPDX-PackageSupplier = "UnionTech Software Technology Co., Ltd."
+SPDX-PackageDownloadLocation = "https://github.com/linuxdeepin/deepin-update-manager"
 
 [[annotations]]
 path = [".github/**", ".obs/**", ".gitlab-ci.yml"]
@@ -24,7 +24,7 @@ SPDX-License-Identifier = "CC0-1.0"
 [[annotations]]
 path = "**.md"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "Deepin Technology Co., Ltd."
+SPDX-FileCopyrightText = "UnionTech Software Technology Co., Ltd."
 SPDX-License-Identifier = "CC-BY-4.0"
 
 [[annotations]]
@@ -36,7 +36,7 @@ SPDX-License-Identifier = "CC0-1.0"
 [[annotations]]
 path = "**.ts"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "Deepin Technology Co., Ltd."
+SPDX-FileCopyrightText = "UnionTech Software Technology Co., Ltd."
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
 [[annotations]]
@@ -48,7 +48,7 @@ SPDX-License-Identifier = "CC0-1.0"
 [[annotations]]
 path = ["**.png", "**.svg"]
 precedence = "aggregate"
-SPDX-FileCopyrightText = "Deepin Technology Co., Ltd."
+SPDX-FileCopyrightText = "UnionTech Software Technology Co., Ltd."
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
 [[annotations]]
