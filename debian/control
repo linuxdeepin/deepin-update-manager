@@ -9,6 +9,8 @@ Build-Depends:
  libdbus-1-dev,
  libssl-dev,
  libsystemd-dev,
+ pkg-config,
+ qt6-base-dev,
  systemd-dev,
 Standards-Version: 4.7.0
 Homepage: https://github.com/linuxdeepin/deepin-update-manager
