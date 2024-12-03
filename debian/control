@@ -1,5 +1,5 @@
 Source: deepin-update-manager
-Section: unknown
+Section: admin
 Priority: optional
 Maintainer: zsien <quezhiyong@deepin.org>
 Rules-Requires-Root: no
@@ -11,14 +11,12 @@ Build-Depends:
  libsystemd-dev,
  systemd-dev,
 Standards-Version: 4.7.0
-Homepage: <insert the upstream URL, if relevant>
-#Vcs-Browser: https://salsa.debian.org/debian/deepin-update-manager
-#Vcs-Git: https://salsa.debian.org/debian/deepin-update-manager.git
+Homepage: https://github.com/linuxdeepin/deepin-update-manager
 
 Package: deepin-update-manager
 Architecture: any
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
-Description: <insert up to 60 chars description>
-  <Insert long description, indented with spaces.>
+Description: Deepin Update Manager
+ Deepin Update Manager is a tool to manage the update of deepin
