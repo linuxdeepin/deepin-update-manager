@@ -169,6 +169,16 @@ static QString systemdEscape(const QString &str)
 
 void ManagerAdaptor::upgrade(const QDBusMessage &message)
 {
+    if (m_state != STATE_IDEL && m_state != STATE_FAILED) {
+        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
+        return;
+    }
+
+    if (!m_upgradable) {
+        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "No upgrade available"));
+        return;
+    }
+
     QString version = OSTREE_DEFAULT_REMOTE_NAME + ':' + m_remoteBranch;
     QString unit = QString("dum-upgrade@%1.service").arg(systemdEscape(version));
 
@@ -244,6 +254,9 @@ void ManagerAdaptor::onDumUpgradeUnitPropertiesChanged(const QString &interfaceN
         if (activeState == "active" || activeState == "activating") {
             m_state = STATE_UPGRADING;
             emit stateChanged(m_state);
+
+            m_upgradable = false;
+            emit upgradableChanged(m_upgradable);
         } else if (activeState == "deactivating") {
             m_state = STATE_SUCCESS;
             emit stateChanged(m_state);
@@ -255,21 +268,8 @@ void ManagerAdaptor::onDumUpgradeUnitPropertiesChanged(const QString &interfaceN
                 m_state = STATE_SUCCESS;
                 emit stateChanged(m_state);
 
-                QTimer::singleShot(1000, this, [this]() {
-                    if (m_state == STATE_SUCCESS) {
-                        m_upgradable = false;
-                        emit upgradableChanged(m_upgradable);
-
-                        m_state = STATE_IDEL;
-                        emit stateChanged(m_state);
-                    };
-                });
-            } else if (m_state != STATE_IDEL) {
                 m_upgradable = false;
                 emit upgradableChanged(m_upgradable);
-
-                m_state = STATE_IDEL;
-                emit stateChanged(m_state);
             }
         } else {
             qWarning() << "unknown activeState:" << activeState;
