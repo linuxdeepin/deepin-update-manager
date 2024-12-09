@@ -4,10 +4,12 @@
 
 #include "ManagerAdaptor.h"
 
+#include "Branch.h"
+
 #include <QDBusObjectPath>
 #include <QLocalSocket>
 
-static const QString DBUS_PATH = "/org/freedesktop/UpdateManager1";
+static const QString OSTREE_PARENT_FILE = "/usr/ostree-parent";
 
 static const QString SYSTEMD1_SERVICE = "org.freedesktop.systemd1";
 static const QString SYSTEMD1_MANAGER_PATH = "/org/freedesktop/systemd1";
@@ -48,11 +50,12 @@ ManagerAdaptor::ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, 
     , m_systemdManager(new org::freedesktop::systemd1::Manager(
           SYSTEMD1_SERVICE, SYSTEMD1_MANAGER_PATH, bus, this))
     , m_dumUpgradeUnit(nullptr)
-    , m_upgradable(false)
     , m_state(STATE_IDEL)
 {
     qRegisterMetaType<Progress>("Progress");
     qDBusRegisterMetaType<Progress>();
+    qRegisterMetaType<Branch>("Branch");
+    qDBusRegisterMetaType<Branch>();
 
     m_server->listen(upgradeStdoutFd);
     connect(m_server, &QLocalServer::newConnection, this, [this] {
@@ -65,6 +68,18 @@ ManagerAdaptor::ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, 
             }
         });
     });
+
+    {
+        QFile file(OSTREE_PARENT_FILE);
+        if (!file.open(QIODevice::ReadOnly)) {
+            throw std::runtime_error("Failed to open file /usr/ostree-parent");
+        }
+
+        auto content = file.readAll().trimmed();
+        file.close();
+
+        m_currentCommit = content.first(content.indexOf('.'));
+    }
 
     connect(this, &ManagerAdaptor::stateChanged, this, [this](const QString &state) {
         sendPropertyChanged("state", state);
@@ -82,18 +97,6 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
         m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
         return;
     }
-
-    QFile file("/usr/ostree-parent");
-    if (!file.open(QIODevice::ReadOnly)) {
-        m_bus.send(
-            message.createErrorReply(QDBusError::InternalError, "Failed to get current commit"));
-        return;
-    }
-
-    auto content = file.readAll().trimmed();
-    file.close();
-
-    QString currentCommit = content.first(content.indexOf('.'));
 
     {
         QProcess listRemoteProcess;
@@ -124,38 +127,43 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
         return;
     }
 
-    const auto lastRef = remoteRefs.last();
-    qWarning() << "lastRef" << lastRef;
-    auto colonIdx = lastRef.indexOf('\t');
-    if (colonIdx == -1) {
-        m_bus.send(message.createErrorReply(QDBusError::InternalError,
-                                            "Check upgrade failed: refs format error"));
-        return;
-    }
-
-    auto branch = lastRef.first(colonIdx)
-                      .sliced(OSTREE_DEFAULT_REMOTE_NAME.length() + 1) // "default:"
-                      .trimmed();
-    auto commit = lastRef.sliced(colonIdx + 1).trimmed();
-    qWarning() << "branch: " << branch << "commit: " << commit
-               << "currentCommit: " << currentCommit;
-    if (currentCommit == commit) {
-        if (m_upgradable == false) {
-            return;
+    Branch lastBranchInfo;
+    for (const auto &ref : remoteRefs) {
+        auto colonIdx = ref.indexOf('\t');
+        if (colonIdx == -1) {
+            qWarning() << "Invalid ref: " << ref;
+            continue;
         }
 
-        m_upgradable = false;
+        auto branch = ref.first(colonIdx)
+                          .sliced(OSTREE_DEFAULT_REMOTE_NAME.length() + 1) // "default:"
+                          .trimmed();
+        auto commit = ref.sliced(colonIdx + 1).trimmed();
+        if (m_currentCommit == commit) {
+            continue;
+        }
+
+        Branch branchInfo(branch);
+
+        if (!branchInfo.valid()) {
+            qWarning() << "Invalid branch: " << branch;
+            continue;
+        }
+
+        if (!lastBranchInfo.valid() || lastBranchInfo.canUpgradeTo(branchInfo)) {
+            lastBranchInfo = branchInfo;
+            continue;
+        }
+    }
+
+    bool upgradable = lastBranchInfo.valid();
+    if (upgradable) {
+        m_remoteBranch = lastBranchInfo.toString();
+    }
+    if (m_upgradable != upgradable) {
+        m_upgradable = upgradable;
         emit upgradableChanged(m_upgradable);
-
-        return;
     }
-
-    m_remoteBranch = branch;
-    if (m_upgradable == true) {
-        return;
-    }
-    m_upgradable = true;
-    emit upgradableChanged(m_upgradable);
 }
 
 static QString systemdEscape(const QString &str)
@@ -185,7 +193,6 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
     auto reply = m_systemdManager->LoadUnit(unit);
     reply.waitForFinished();
     if (!reply.isValid()) {
-        // todo: log
         m_bus.send(message.createErrorReply(QDBusError::InternalError,
                                             QString("GetUnit %1 failed").arg(unit)));
         return;
@@ -254,12 +261,12 @@ void ManagerAdaptor::onDumUpgradeUnitPropertiesChanged(const QString &interfaceN
         if (activeState == "active" || activeState == "activating") {
             m_state = STATE_UPGRADING;
             emit stateChanged(m_state);
-
-            m_upgradable = false;
-            emit upgradableChanged(m_upgradable);
         } else if (activeState == "deactivating") {
             m_state = STATE_SUCCESS;
             emit stateChanged(m_state);
+
+            m_upgradable = false;
+            emit upgradableChanged(m_upgradable);
         } else if (activeState == "failed") {
             m_state = STATE_FAILED;
             emit stateChanged(m_state);

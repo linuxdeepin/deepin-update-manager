@@ -55,6 +55,7 @@ private:
     org::freedesktop::systemd1::Manager *m_systemdManager;
     org::freedesktop::systemd1::Unit *m_dumUpgradeUnit;
     QString m_remoteBranch;
+    QString m_currentCommit;
 
     bool m_upgradable;
     QString m_state;
