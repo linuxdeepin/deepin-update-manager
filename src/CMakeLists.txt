@@ -4,8 +4,6 @@ set(DUM_SOURCES
     main.cpp
     ManagerAdaptor.h
     ManagerAdaptor.cpp
-    Report.h
-    Report.cpp
 )
 
 qt_add_dbus_interface(DUM_SOURCES org.freedesktop.systemd1.Manager.xml SystemdManagerInterface)
