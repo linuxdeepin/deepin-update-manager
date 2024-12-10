@@ -19,9 +19,6 @@ public:
     Branch() = default;
     explicit Branch(const QString &str);
 
-    QDBusArgument operator<<(QDBusArgument &argument) const;
-    const QDBusArgument operator>>(const QDBusArgument &argument);
-
     const QString &period() const { return m_period; }
 
     const QString &version() const { return m_version; }
@@ -35,10 +32,7 @@ private:
     QString m_codeName;
     QString m_period;
     QString m_version;
-    QString m_arch;
     QString m_project;
     QString m_component;
     QString m_revision;
 };
-
-Q_DECLARE_METATYPE(Branch)
