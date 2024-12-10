@@ -21,6 +21,7 @@ target_link_libraries(${BIN_NAME} PRIVATE
     Qt6::Core
     Qt6::DBus
     Qt6::Network
+    PolkitQt6-1::Core
 )
 
 install(

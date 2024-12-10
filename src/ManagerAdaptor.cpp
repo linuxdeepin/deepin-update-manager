@@ -6,6 +6,8 @@
 
 #include "Branch.h"
 
+#include <PolkitQt1/Authority>
+
 #include <QDBusObjectPath>
 #include <QLocalSocket>
 
@@ -21,6 +23,9 @@ static const QString STATE_SUCCESS = "success";
 
 static const QString OSTREE_REPO = "/sysroot/ostree/repo";
 static const QByteArray OSTREE_DEFAULT_REMOTE_NAME = "default";
+
+static const QString ACTION_ID_CHECK_UPGRADE = "org.deepin.UpdateManager.check-upgrade";
+static const QString ACTION_ID_UPGRADE = "org.deepin.UpdateManager.upgrade";
 
 QDBusArgument &operator<<(QDBusArgument &argument, const Progress &progress)
 {
@@ -91,6 +96,11 @@ ManagerAdaptor::~ManagerAdaptor() = default;
 
 void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
 {
+    if (!checkAuthorization(ACTION_ID_CHECK_UPGRADE, message.service())) {
+        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "Not authorized"));
+        return;
+    }
+
     if (m_state != STATE_IDEL && m_state != STATE_FAILED) {
         m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
         return;
@@ -175,6 +185,11 @@ static QString systemdEscape(const QString &str)
 
 void ManagerAdaptor::upgrade(const QDBusMessage &message)
 {
+    if (!checkAuthorization(ACTION_ID_UPGRADE, message.service())) {
+        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "Not authorized"));
+        return;
+    }
+
     if (m_state != STATE_IDEL && m_state != STATE_FAILED) {
         m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
         return;
@@ -309,4 +324,20 @@ void ManagerAdaptor::sendPropertyChanged(const QString &property, const QVariant
     if (!res) {
         qWarning() << "sendPropertyChanged failed";
     }
+}
+
+bool ManagerAdaptor::checkAuthorization(const QString &actionId, const QString &service) const
+{
+    auto pid = m_bus.interface()->servicePid(service).value();
+    auto authority = PolkitQt1::Authority::instance();
+    auto result = authority->checkAuthorizationSync(actionId,
+                                                    PolkitQt1::UnixProcessSubject(pid),
+                                                    PolkitQt1::Authority::AllowUserInteraction);
+    if (authority->hasError()) {
+        qWarning() << "checkAuthorizationSync failed:" << authority->lastError()
+                   << authority->errorDetails();
+        return false;
+    }
+
+    return result == PolkitQt1::Authority::Result::Yes;
 }

@@ -68,4 +68,5 @@ private slots:
 private:
     void parseUpgradeStdoutLine(const QByteArray &line);
     void sendPropertyChanged(const QString &property, const QVariant &value);
+    bool checkAuthorization(const QString &actionId, const QString &service) const;
 };

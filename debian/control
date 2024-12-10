@@ -7,6 +7,7 @@ Build-Depends:
  cmake,
  debhelper-compat (= 13),
  libdbus-1-dev,
+ libpolkit-qt6-1-dev,
  libssl-dev,
  libsystemd-dev,
  pkg-config,
