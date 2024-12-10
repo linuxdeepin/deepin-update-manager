@@ -15,6 +15,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 include(GNUInstallDirs)
 
 find_package(Qt6 REQUIRED COMPONENTS Core DBus Network)
+find_package(PolkitQt6-1 REQUIRED)
 find_package(PkgConfig)
 
 pkg_check_modules(libsystemd REQUIRED IMPORTED_TARGET libsystemd)
@@ -33,6 +34,13 @@ else()
 endif()
 
 add_subdirectory(src)
+
+install(
+    FILES
+        misc/polkit-1/actions/org.deepin.UpdateManager.policy
+    DESTINATION
+        ${CMAKE_INSTALL_DATADIR}/polkit-1/actions
+)
 
 install(
     FILES
