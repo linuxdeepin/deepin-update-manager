@@ -10,7 +10,7 @@
 Branch::Branch(const QString &str)
 {
     auto tmp = str.split('/');
-    if (tmp.size() < 5) {
+    if (tmp.size() < 4) {
         // throw std::invalid_argument("Branch format error");
         return;
     }
@@ -18,52 +18,21 @@ Branch::Branch(const QString &str)
     m_codeName = tmp[0];
     m_period = tmp[1];
     m_version = tmp[2];
-    m_arch = tmp[3];
 
-    if (tmp[4] == COMPONENT_BASE || tmp[4] == COMPONENT_SECURITY) {
+    if (tmp[3] == COMPONENT_BASE || tmp[3] == COMPONENT_SECURITY) {
+        m_component = tmp[3];
+
+        if (tmp.size() > 4) {
+            m_revision = tmp[4];
+        }
+    } else { // 商业项目
+        m_project = tmp[3];
         m_component = tmp[4];
 
         if (tmp.size() > 5) {
             m_revision = tmp[5];
         }
-    } else { // 商业项目
-        m_project = tmp[4];
-        m_component = tmp[5];
-
-        if (tmp.size() > 6) {
-            m_revision = tmp[6];
-        }
     }
-}
-
-QDBusArgument Branch::operator<<(QDBusArgument &argument) const
-{
-    argument.beginStructure();
-    argument << m_codeName;
-    argument << m_period;
-    argument << m_version;
-    argument << m_arch;
-    argument << m_project;
-    argument << m_component;
-    argument << m_revision;
-    argument.endStructure();
-
-    return argument;
-}
-
-const QDBusArgument Branch::operator>>(const QDBusArgument &argument)
-{
-    argument.beginStructure();
-    argument >> m_codeName;
-    argument >> m_period;
-    argument >> m_version;
-    argument >> m_arch;
-    argument >> m_project;
-    argument >> m_component;
-    argument >> m_revision;
-    argument.endStructure();
-
-    return argument;
 }
 
 bool Branch::valid() const
@@ -82,7 +51,6 @@ bool Branch::valid() const
         return false;
     }
 
-
     // 非商业项目 base 不能有 revision
     if (m_project.isEmpty() && m_component == COMPONENT_BASE && !m_revision.isEmpty()) {
         return false;
@@ -98,7 +66,7 @@ bool Branch::valid() const
 
 bool Branch::canUpgradeTo(const Branch &dest) const
 {
-    if (dest.valid()) {
+    if (!dest.valid()) {
         return false;
     }
 
@@ -123,7 +91,7 @@ bool Branch::canUpgradeTo(const Branch &dest) const
 QString Branch::toString() const
 {
     QString str;
-    str += m_codeName + "/" + m_period + "/" + m_version + "/" + m_arch;
+    str += m_codeName + "/" + m_period + "/" + m_version;
 
     if (!m_project.isEmpty()) {
         str += "/" + m_project;

@@ -54,8 +54,6 @@ ManagerAdaptor::ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, 
 {
     qRegisterMetaType<Progress>("Progress");
     qDBusRegisterMetaType<Progress>();
-    qRegisterMetaType<Branch>("Branch");
-    qDBusRegisterMetaType<Branch>();
 
     m_server->listen(upgradeStdoutFd);
     connect(m_server, &QLocalServer::newConnection, this, [this] {
