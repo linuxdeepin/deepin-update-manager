@@ -11,8 +11,6 @@
 #include <QDBusObjectPath>
 #include <QLocalSocket>
 
-static const QString OSTREE_PARENT_FILE = "/usr/ostree-parent";
-
 static const QString SYSTEMD1_SERVICE = "org.freedesktop.systemd1";
 static const QString SYSTEMD1_MANAGER_PATH = "/org/freedesktop/systemd1";
 
@@ -48,10 +46,14 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, Progress &progres
     return argument;
 }
 
-ManagerAdaptor::ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, QObject *parent)
+ManagerAdaptor::ManagerAdaptor(int listRemoteRefsFd,
+                               int upgradeStdoutFd,
+                               const QDBusConnection &bus,
+                               QObject *parent)
     : QObject(parent)
     , m_bus(bus)
-    , m_server(new QLocalServer(this))
+    , m_listRemoteRefsStdoutServer(new QLocalServer(this))
+    , m_upgradeStdoutServer(new QLocalServer(this))
     , m_systemdManager(new org::freedesktop::systemd1::Manager(
           SYSTEMD1_SERVICE, SYSTEMD1_MANAGER_PATH, bus, this))
     , m_dumUpgradeUnit(nullptr)
@@ -60,9 +62,11 @@ ManagerAdaptor::ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, 
     qRegisterMetaType<Progress>("Progress");
     qDBusRegisterMetaType<Progress>();
 
-    m_server->listen(upgradeStdoutFd);
-    connect(m_server, &QLocalServer::newConnection, this, [this] {
-        auto *socket = m_server->nextPendingConnection();
+    m_listRemoteRefsStdoutServer->listen(listRemoteRefsFd);
+
+    m_upgradeStdoutServer->listen(upgradeStdoutFd);
+    connect(m_upgradeStdoutServer, &QLocalServer::newConnection, this, [this] {
+        auto *socket = m_upgradeStdoutServer->nextPendingConnection();
         connect(socket, &QLocalSocket::disconnected, socket, &QLocalSocket::deleteLater);
         connect(socket, &QLocalSocket::readyRead, this, [this, socket] {
             while (socket->canReadLine()) {
@@ -71,18 +75,6 @@ ManagerAdaptor::ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, 
             }
         });
     });
-
-    {
-        QFile file(OSTREE_PARENT_FILE);
-        if (!file.open(QIODevice::ReadOnly)) {
-            throw std::runtime_error("Failed to open file /usr/ostree-parent");
-        }
-
-        auto content = file.readAll().trimmed();
-        file.close();
-
-        m_currentCommit = content.first(content.indexOf('.'));
-    }
 
     connect(this, &ManagerAdaptor::stateChanged, this, [this](const QString &state) {
         sendPropertyChanged("state", state);
@@ -106,27 +98,46 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
         return;
     }
 
-    {
-        QProcess listRemoteProcess;
-        listRemoteProcess.start("/usr/bin/ostree", { "remote", "list", "--repo", OSTREE_REPO });
-        listRemoteProcess.waitForFinished();
-        const auto output = listRemoteProcess.readAllStandardOutput();
-        if (output.isEmpty() || !output.contains(OSTREE_DEFAULT_REMOTE_NAME)) {
-            m_bus.send(message.createErrorReply(QDBusError::InternalError, "No default remote"));
-            return;
-        }
-    }
-
-    QProcess remoteRefsProcess;
-    remoteRefsProcess.start(
-        "/usr/bin/ostree",
-        { "remote", "refs", OSTREE_DEFAULT_REMOTE_NAME, "--repo", OSTREE_REPO, "--revision" });
-    remoteRefsProcess.waitForFinished();
-    const auto output = remoteRefsProcess.readAllStandardOutput();
-    if (output.isEmpty()) {
-        m_bus.send(message.createErrorReply(QDBusError::InternalError, "Check upgrade failed"));
+    QString unit = "dum-list-remote-refs.service";
+    auto reply = m_systemdManager->LoadUnit(unit);
+    reply.waitForFinished();
+    if (!reply.isValid()) {
+        m_bus.send(message.createErrorReply(QDBusError::InternalError,
+                                            QString("LoadUnit %1 failed").arg(unit)));
         return;
     }
+
+    auto unitPath = reply.value();
+    auto *dumListRemoteRefsUnit = new org::freedesktop::systemd1::Unit(SYSTEMD1_SERVICE,
+                                                                       unitPath.path(),
+                                                                       QDBusConnection::systemBus(),
+                                                                       this);
+    auto activeState = dumListRemoteRefsUnit->activeState();
+    if (activeState == "active" || activeState == "activating" || activeState == "deactivating") {
+        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
+        return;
+    }
+
+    auto reply1 = dumListRemoteRefsUnit->Start("replace");
+    reply1.waitForFinished();
+    if (reply1.isError()) {
+        m_bus.send(message.createErrorReply(
+            QDBusError::InternalError,
+            QString("Start %1 failed: %2").arg(unit).arg(reply1.error().message())));
+        return;
+    }
+
+    if (!m_listRemoteRefsStdoutServer->waitForNewConnection(5000)) {
+        m_bus.send(message.createErrorReply(QDBusError::InternalError,
+                                            QString("WaitForNewConnection failed")));
+        return;
+    }
+
+    auto *socket = m_listRemoteRefsStdoutServer->nextPendingConnection();
+    // socket->waitForReadyRead();
+    socket->waitForDisconnected();
+    auto output = socket->readAll();
+    socket->deleteLater();
 
     auto remoteRefs = output.trimmed().split('\n');
     if (remoteRefs.size() < 1) {
@@ -135,21 +146,28 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
         return;
     }
 
+    Branch currentBranchInfo;
     Branch lastBranchInfo;
-    for (const auto &ref : remoteRefs) {
-        auto colonIdx = ref.indexOf('\t');
+    for (auto ref : remoteRefs) {
+        bool startsWithAsterisk = ref.startsWith('*');
+        if (startsWithAsterisk) {
+            ref.remove(0, 1);
+            ref = ref.trimmed();
+        }
+
+        auto colonIdx = ref.indexOf(' ');
         if (colonIdx == -1) {
             qWarning() << "Invalid ref: " << ref;
             continue;
         }
 
-        auto branch = ref.first(colonIdx)
-                          .sliced(OSTREE_DEFAULT_REMOTE_NAME.length() + 1) // "default:"
-                          .trimmed();
-        auto commit = ref.sliced(colonIdx + 1).trimmed();
-        if (m_currentCommit == commit) {
+        auto branch = ref.first(colonIdx).trimmed();
+        if (!branch.startsWith("default:")) {
+            qWarning() << "Invalid branch: " << branch;
             continue;
         }
+        branch = branch.sliced(OSTREE_DEFAULT_REMOTE_NAME.length() + 1).trimmed(); // "default:"
+        auto commit = ref.sliced(colonIdx + 1).trimmed();
 
         Branch branchInfo(branch);
 
@@ -158,9 +176,23 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
             continue;
         }
 
+        qInfo() << "Branch: " << branch;
+        if (startsWithAsterisk) {
+            currentBranchInfo = branchInfo;
+            continue;
+        }
+
         if (!lastBranchInfo.valid() || lastBranchInfo.canUpgradeTo(branchInfo)) {
             lastBranchInfo = branchInfo;
             continue;
+        }
+    }
+
+    qInfo() << "currentBranchInfo:" << currentBranchInfo.toString();
+    qInfo() << "lastBranchInfo:" << lastBranchInfo.toString();
+    if (currentBranchInfo.valid()) {
+        if (!currentBranchInfo.canUpgradeTo(lastBranchInfo)) {
+            lastBranchInfo = Branch();
         }
     }
 

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>System upgrade</vendor>
+  <vendor_url>https://github.com/linuxdeepin/deepin-update-manager</vendor_url>
+  <action id="org.deepin.UpdateManager.check-upgrade">
+    <description>Check system upgrade</description>
+    <description xml:lang="zh_CN">检查更新</description>
+    <message>Authentication is required to check the system upgrade</message>
+    <message xml:lang="zh_CN">检查更新需要认证</message>
+    <defaults>
+      <allow_any>yes</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/deepin-update-manager</annotate>
+    <annotate key="org.freedesktop.policykit.owner">unix-user:deepin-update-manager</annotate>
+  </action>
+  <action id="org.deepin.UpdateManager.upgrade">
+    <description>Upgrade the system</description>
+    <description xml:lang="zh_CN">更新系统</description>
+    <message>Authentication is required to upgrade the system</message>
+    <message xml:lang="zh_CN">更新系统需要认证</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/deepin-update-manager</annotate>
+    <annotate key="org.freedesktop.policykit.owner">unix-user:deepin-update-manager</annotate>
+  </action>
+</policyconfig>

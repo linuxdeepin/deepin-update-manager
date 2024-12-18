@@ -1,0 +1,9 @@
+[Unit]
+Description=DUM list-remote-refs stdout
+
+[Socket]
+Service=deepin-update-manager.service
+ListenStream=/run/dum/list-remote-refs-stdout
+ReceiveBuffer=8M
+FileDescriptorName=dum-list-remote-refs-stdout
+RemoveOnStop=true
