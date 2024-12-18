@@ -1,0 +1,8 @@
+[Unit]
+Description=deepin Immutable List Remote Refs
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/deepin-immutable-ctl ota list-remote-refs
+StandardOutput=file:/run/dum/list-remote-refs-stdout
+StandardError=file:/run/dum/list-remote-refs-stdout

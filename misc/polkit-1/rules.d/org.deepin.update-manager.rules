@@ -1,6 +1,6 @@
 polkit.addRule(function(action, subject) {
     if (action.id == "org.freedesktop.systemd1.manage-unit-files" &&
-        /^dum-upgrade@.+\.service$/.test(action.lookup("unit")) &&
+        (action.lookup("unit") == "dum-list-remote-refs.service" || /^dum-upgrade@.+\.service$/.test(action.lookup("unit"))) &&
         action.lookup("verb") == "start" &&
         subject.user == "deepin-update-manager") {
             return polkit.Result.YES;

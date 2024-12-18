@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 
+const std::string DUM_LIST_REMOTE_REFS_STDOUT = "dum-list-remote-refs-stdout";
 const std::string DUM_UPGRADE_STDOUT = "dum-upgrade-stdout";
 
 static std::unordered_map<std::string, int> getFds()
@@ -30,18 +31,23 @@ static std::unordered_map<std::string, int> getFds()
 int main(int argc, char *argv[])
 {
     auto fds = getFds();
+    if (!fds.contains(DUM_LIST_REMOTE_REFS_STDOUT)) {
+        qWarning() << DUM_LIST_REMOTE_REFS_STDOUT << " not found";
+        return 1;
+    }
     if (!fds.contains(DUM_UPGRADE_STDOUT)) {
         qWarning() << DUM_UPGRADE_STDOUT << " not found";
         return 1;
     }
 
+    int dumListRemoteRefsStdoutFd = fds[DUM_LIST_REMOTE_REFS_STDOUT];
     int dumUpgradeStdoutFd = fds[DUM_UPGRADE_STDOUT];
 
     QCoreApplication a(argc, argv);
 
     QDBusConnection connection = QDBusConnection::systemBus();
 
-    ManagerAdaptor adaptor(dumUpgradeStdoutFd, connection);
+    ManagerAdaptor adaptor(dumListRemoteRefsStdoutFd, dumUpgradeStdoutFd, connection);
     connection.registerService("org.deepin.UpdateManager1");
     connection.registerObject(ADAPTOR_PATH, &adaptor, QDBusConnection::ExportScriptableContents);
 

@@ -12,7 +12,8 @@
 
 #define ADAPTOR_PATH "/org/deepin/UpdateManager1"
 
-struct Progress {
+struct Progress
+{
     QString stage;
     float percent;
 };
@@ -29,7 +30,10 @@ class ManagerAdaptor : public QObject
     Q_PROPERTY(QString state READ state NOTIFY stateChanged SCRIPTABLE true)
 
 public:
-    ManagerAdaptor(int upgradeStdoutFd, const QDBusConnection &bus, QObject *parent = nullptr);
+    ManagerAdaptor(int listRemoteRefsFd,
+                   int upgradeStdoutFd,
+                   const QDBusConnection &bus,
+                   QObject *parent = nullptr);
     ~ManagerAdaptor() override;
 
     /* dbus start */
@@ -51,11 +55,11 @@ signals:
 
 private:
     QDBusConnection m_bus;
-    QLocalServer *m_server;
+    QLocalServer *m_listRemoteRefsStdoutServer;
+    QLocalServer *m_upgradeStdoutServer;
     org::freedesktop::systemd1::Manager *m_systemdManager;
     org::freedesktop::systemd1::Unit *m_dumUpgradeUnit;
     QString m_remoteBranch;
-    QString m_currentCommit;
 
     bool m_upgradable;
     QString m_state;

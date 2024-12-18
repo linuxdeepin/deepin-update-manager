@@ -57,6 +57,8 @@ install(
 install(
     FILES
         misc/systemd/system/deepin-update-manager.service
+        misc/systemd/system/dum-list-remote-refs-stdout.socket
+        misc/systemd/system/dum-list-remote-refs.service
         misc/systemd/system/dum-upgrade-stdout.socket
         misc/systemd/system/dum-upgrade@.service
     DESTINATION
