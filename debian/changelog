@@ -1,3 +1,16 @@
+deepin-update-manager (1.0.2) unstable; urgency=medium
+
+  * fix: failed to check upgrade
+  * feat: add authorization
+  * fix: upgrade failed
+  * fix: upgraded to wrong version
+  * chore: remove unused files
+  * fix: wrong state
+  * chore: add missing dependencies
+  * chore: fix REUSE specification compliant
+
+ -- zsien <quezhiyong@deepin.org>  Thu, 19 Dec 2024 10:10:14 +0800
+
 deepin-update-manager (1.0.1) unstable; urgency=medium
 
   * Initial release.
