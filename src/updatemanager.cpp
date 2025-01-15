@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "ManagerAdaptor.h"
+#include "updatemanager.h"
 
 #include "Branch.h"
 
@@ -46,25 +46,33 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, Progress &progres
     return argument;
 }
 
-ManagerAdaptor::ManagerAdaptor(int listRemoteRefsFd,
-                               int upgradeStdoutFd,
-                               const QDBusConnection &bus,
-                               QObject *parent)
+#define DUM_LIST_REMOTE_REFS_STDOUT_SOCKET "dum-list-remote-refs-stdout"
+#define DUM_UPGRADE_STDOUT_SOCKET "dum-upgrade-stdout"
+
+UpdateManager::UpdateManager(int listRemoteRefsFd, int upgradeStdoutFd,QObject *parent)
     : QObject(parent)
-    , m_bus(bus)
     , m_listRemoteRefsStdoutServer(new QLocalServer(this))
     , m_upgradeStdoutServer(new QLocalServer(this))
-    , m_systemdManager(new org::freedesktop::systemd1::Manager(
-          SYSTEMD1_SERVICE, SYSTEMD1_MANAGER_PATH, bus, this))
     , m_dumUpgradeUnit(nullptr)
     , m_state(STATE_IDEL)
+    , m_idle(Idle())
+    , m_checker(nullptr)
+    , m_downloader(nullptr)
+    , m_installer(nullptr)
 {
     qRegisterMetaType<Progress>("Progress");
     qDBusRegisterMetaType<Progress>();
 
-    m_listRemoteRefsStdoutServer->listen(listRemoteRefsFd);
+    m_systemdManager = new org::freedesktop::systemd1::Manager(SYSTEMD1_SERVICE, SYSTEMD1_MANAGER_PATH, QDBusConnection::systemBus(), this);
+    auto ok = m_listRemoteRefsStdoutServer->listen(listRemoteRefsFd);
+    if (!ok) {
+        qWarning() << "Failed to list Remote References." << m_listRemoteRefsStdoutServer->errorString();
+    }
+    ok = m_upgradeStdoutServer->listen(upgradeStdoutFd);
+    if (!ok) {
+        qWarning() << "Failed to list Upgrade References." << m_listRemoteRefsStdoutServer->errorString();
+    }
 
-    m_upgradeStdoutServer->listen(upgradeStdoutFd);
     connect(m_upgradeStdoutServer, &QLocalServer::newConnection, this, [this] {
         auto *socket = m_upgradeStdoutServer->nextPendingConnection();
         connect(socket, &QLocalSocket::disconnected, socket, &QLocalSocket::deleteLater);
@@ -75,26 +83,51 @@ ManagerAdaptor::ManagerAdaptor(int listRemoteRefsFd,
             }
         });
     });
-
-    connect(this, &ManagerAdaptor::stateChanged, this, [this](const QString &state) {
-        sendPropertyChanged("state", state);
-    });
-    connect(this, &ManagerAdaptor::upgradableChanged, this, [this](bool upgradable) {
-        sendPropertyChanged("upgradable", upgradable);
-    });
 }
 
-ManagerAdaptor::~ManagerAdaptor() = default;
+UpdateManager::~UpdateManager() = default;
 
-void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
+void UpdateManager::setPropertyUpgradable(bool upgradable)
 {
-    if (!checkAuthorization(ACTION_ID_CHECK_UPGRADE, message.service())) {
-        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "Not authorized"));
+    if (m_upgradable != upgradable) {
+        m_upgradable = upgradable;
+        sendPropertyChanged("upgradable",m_upgradable);
+    }
+}
+
+void UpdateManager::setPropertyState(const QString &state)
+{
+    if (m_state != state) {
+        m_state = state;
+        sendPropertyChanged("state",m_state);
+    }
+}
+
+void UpdateManager::setPropertyCurrentBranch(const QString &branch)
+{
+    m_currentBranch = branch;
+    sendPropertyChanged("currentBranch",m_currentBranch);
+}
+
+void UpdateManager::setPropertyAllBranches(const QStringList &branches)
+{
+    m_allBranches = branches;
+    sendPropertyChanged("allBranches", m_allBranches);
+}
+
+void UpdateManager::setCheckUpdateMode(uint16_t checkUpdateMode) { }
+
+void UpdateManager::setUpgradeMode(uint16_t upgradeMode) { }
+
+void UpdateManager::checkUpgrade()
+{
+    if (!checkAuthorization(ACTION_ID_CHECK_UPGRADE, message().service())) {
+        sendErrorReply(QDBusError::AccessDenied, "Not authorized");
         return;
     }
 
     if (m_state != STATE_IDEL && m_state != STATE_FAILED) {
-        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
+       sendErrorReply(QDBusError::AccessDenied, "An upgrade is in progress");
         return;
     }
 
@@ -102,8 +135,7 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
     auto reply = m_systemdManager->LoadUnit(unit);
     reply.waitForFinished();
     if (!reply.isValid()) {
-        m_bus.send(message.createErrorReply(QDBusError::InternalError,
-                                            QString("LoadUnit %1 failed").arg(unit)));
+        sendErrorReply(QDBusError::InternalError,QString("LoadUnit %1 failed").arg(unit));
         return;
     }
 
@@ -114,22 +146,21 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
                                                                        this);
     auto activeState = dumListRemoteRefsUnit->activeState();
     if (activeState == "active" || activeState == "activating" || activeState == "deactivating") {
-        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
+        sendErrorReply(QDBusError::AccessDenied, "An upgrade is in progress");
         return;
     }
 
     auto reply1 = dumListRemoteRefsUnit->Start("replace");
     reply1.waitForFinished();
     if (reply1.isError()) {
-        m_bus.send(message.createErrorReply(
+        sendErrorReply(
             QDBusError::InternalError,
-            QString("Start %1 failed: %2").arg(unit).arg(reply1.error().message())));
+            QString("Start %1 failed: %2").arg(unit).arg(reply1.error().message()));
         return;
     }
 
     if (!m_listRemoteRefsStdoutServer->waitForNewConnection(5000)) {
-        m_bus.send(message.createErrorReply(QDBusError::InternalError,
-                                            QString("WaitForNewConnection failed")));
+        sendErrorReply(QDBusError::InternalError,QString("WaitForNewConnection failed"));
         return;
     }
 
@@ -141,13 +172,13 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
 
     auto remoteRefs = output.trimmed().split('\n');
     if (remoteRefs.size() < 1) {
-        m_bus.send(
-            message.createErrorReply(QDBusError::InternalError, "Check upgrade failed: no refs"));
+        sendErrorReply(QDBusError::InternalError, "Check upgrade failed: no refs");
         return;
     }
 
     Branch currentBranchInfo;
     Branch lastBranchInfo;
+    QStringList branches;
     for (auto ref : remoteRefs) {
         bool startsWithAsterisk = ref.startsWith('*');
         if (startsWithAsterisk) {
@@ -175,21 +206,21 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
             qWarning() << "Invalid branch: " << branch;
             continue;
         }
-
+        branches.push_back(branchInfo.toString());
         qInfo() << "Branch: " << branch;
         if (startsWithAsterisk) {
             currentBranchInfo = branchInfo;
-            continue;
         }
 
         if (!lastBranchInfo.valid() || lastBranchInfo.canUpgradeTo(branchInfo)) {
             lastBranchInfo = branchInfo;
-            continue;
         }
     }
 
     qInfo() << "currentBranchInfo:" << currentBranchInfo.toString();
     qInfo() << "lastBranchInfo:" << lastBranchInfo.toString();
+    setPropertyCurrentBranch(currentBranchInfo.toString());
+    setPropertyAllBranches(branches);
     if (currentBranchInfo.valid()) {
         if (!currentBranchInfo.canUpgradeTo(lastBranchInfo)) {
             lastBranchInfo = Branch();
@@ -200,10 +231,7 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
     if (upgradable) {
         m_remoteBranch = lastBranchInfo.toString();
     }
-    if (m_upgradable != upgradable) {
-        m_upgradable = upgradable;
-        emit upgradableChanged(m_upgradable);
-    }
+    setPropertyUpgradable(upgradable);
 }
 
 static QString systemdEscape(const QString &str)
@@ -215,20 +243,20 @@ static QString systemdEscape(const QString &str)
     return tmp;
 }
 
-void ManagerAdaptor::upgrade(const QDBusMessage &message)
+void UpdateManager::upgrade()
 {
-    if (!checkAuthorization(ACTION_ID_UPGRADE, message.service())) {
-        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "Not authorized"));
+    if (!checkAuthorization(ACTION_ID_UPGRADE, message().service())) {
+        sendErrorReply(QDBusError::AccessDenied, "Not authorized");
         return;
     }
 
     if (m_state != STATE_IDEL && m_state != STATE_FAILED) {
-        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
+        sendErrorReply(QDBusError::AccessDenied, "An upgrade is in progress");
         return;
     }
 
     if (!m_upgradable) {
-        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "No upgrade available"));
+        sendErrorReply(QDBusError::AccessDenied, "No upgrade available");
         return;
     }
 
@@ -238,13 +266,12 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
     auto reply = m_systemdManager->LoadUnit(unit);
     reply.waitForFinished();
     if (!reply.isValid()) {
-        m_bus.send(message.createErrorReply(QDBusError::InternalError,
-                                            QString("GetUnit %1 failed").arg(unit)));
+        sendErrorReply(QDBusError::InternalError,QString("GetUnit %1 failed").arg(unit));
         return;
     }
 
     if (m_dumUpgradeUnit) {
-        m_bus.disconnect(SYSTEMD1_SERVICE,
+        connection().disconnect(SYSTEMD1_SERVICE,
                          m_dumUpgradeUnit->path(),
                          "org.freedesktop.DBus.Properties",
                          "PropertiesChanged",
@@ -263,11 +290,11 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
 
     auto activeState = m_dumUpgradeUnit->activeState();
     if (activeState == "active" || activeState == "activating" || activeState == "deactivating") {
-        m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
+        sendErrorReply(QDBusError::AccessDenied, "An upgrade is in progress");
         return;
     }
 
-    m_bus.connect(SYSTEMD1_SERVICE,
+    connection().connect(SYSTEMD1_SERVICE,
                   m_dumUpgradeUnit->path(),
                   "org.freedesktop.DBus.Properties",
                   "PropertiesChanged",
@@ -279,24 +306,42 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
     auto reply1 = m_dumUpgradeUnit->Start("replace");
     reply1.waitForFinished();
     if (reply1.isError()) {
-        m_bus.send(message.createErrorReply(
-            QDBusError::InternalError,
-            QString("Start %1 failed: %2").arg(unit).arg(reply1.error().message())));
+        sendErrorReply(QDBusError::InternalError,QString("Start %1 failed: %2").arg(unit).arg(reply1.error().message()));
         return;
     }
 }
 
-bool ManagerAdaptor::upgradable() const
+bool UpdateManager::upgradable() const
 {
     return m_upgradable;
 }
 
-QString ManagerAdaptor::state() const
+QString UpdateManager::state() const
 {
     return m_state;
 }
 
-void ManagerAdaptor::onDumUpgradeUnitPropertiesChanged(const QString &interfaceName,
+QString UpdateManager::currentBranch() const
+{
+    return m_currentBranch;
+}
+
+QStringList UpdateManager::allBranches() const
+{
+    return m_allBranches;
+}
+
+uint16_t UpdateManager::checkUpdateMode() const
+{
+    return m_checkUpdateMode;
+}
+
+uint16_t UpdateManager::upgradeMode() const
+{
+    return m_upgradeMode;
+}
+
+void UpdateManager::onDumUpgradeUnitPropertiesChanged(const QString &interfaceName,
                                                        const QVariantMap &changedProperties,
                                                        const QStringList &invalidatedProperties)
 {
@@ -304,24 +349,16 @@ void ManagerAdaptor::onDumUpgradeUnitPropertiesChanged(const QString &interfaceN
         auto activeState = changedProperties.value("ActiveState").toString();
         qWarning() << "activeState:" << activeState;
         if (activeState == "active" || activeState == "activating") {
-            m_state = STATE_UPGRADING;
-            emit stateChanged(m_state);
+            setPropertyState(STATE_UPGRADING);
         } else if (activeState == "deactivating") {
-            m_state = STATE_SUCCESS;
-            emit stateChanged(m_state);
-
-            m_upgradable = false;
-            emit upgradableChanged(m_upgradable);
+            setPropertyState(STATE_SUCCESS);
+            setPropertyUpgradable(false);
         } else if (activeState == "failed") {
-            m_state = STATE_FAILED;
-            emit stateChanged(m_state);
+            setPropertyState(STATE_FAILED);
         } else if (activeState == "inactive") {
             if (m_state == STATE_UPGRADING) {
-                m_state = STATE_SUCCESS;
-                emit stateChanged(m_state);
-
-                m_upgradable = false;
-                emit upgradableChanged(m_upgradable);
+                setPropertyState(STATE_SUCCESS);
+                setPropertyUpgradable(false);
             }
         } else {
             qWarning() << "unknown activeState:" << activeState;
@@ -331,7 +368,7 @@ void ManagerAdaptor::onDumUpgradeUnitPropertiesChanged(const QString &interfaceN
 
 static const QByteArray PROGRESS_PREFIX = "progressRate:";
 
-void ManagerAdaptor::parseUpgradeStdoutLine(const QByteArray &line)
+void UpdateManager::parseUpgradeStdoutLine(const QByteArray &line)
 {
     if (line.startsWith(PROGRESS_PREFIX)) {
         auto tmp = QByteArrayView(line.begin() + PROGRESS_PREFIX.size(), line.end()).trimmed();
@@ -343,24 +380,24 @@ void ManagerAdaptor::parseUpgradeStdoutLine(const QByteArray &line)
     }
 }
 
-void ManagerAdaptor::sendPropertyChanged(const QString &property, const QVariant &value)
+void UpdateManager::sendPropertyChanged(const QString &property, const QVariant &value)
 {
-    auto msg = QDBusMessage::createSignal(ADAPTOR_PATH,
+    auto msg = QDBusMessage::createSignal(DBUS_PATH,
                                           "org.freedesktop.DBus.Properties",
                                           "PropertiesChanged");
-    msg << "org.deepin.UpdateManager1";
+    msg << DBUS_SERVICE_NAME;
     msg << QVariantMap{ { property, value } };
     msg << QStringList{};
 
-    auto res = m_bus.send(msg);
+    auto res = connection().send(msg);
     if (!res) {
         qWarning() << "sendPropertyChanged failed";
     }
 }
 
-bool ManagerAdaptor::checkAuthorization(const QString &actionId, const QString &service) const
+bool UpdateManager::checkAuthorization(const QString &actionId, const QString &service) const
 {
-    auto pid = m_bus.interface()->servicePid(service).value();
+    auto pid = connection().interface()->servicePid(service).value();
     auto authority = PolkitQt1::Authority::instance();
     auto result = authority->checkAuthorizationSync(actionId,
                                                     PolkitQt1::UnixProcessSubject(pid),
