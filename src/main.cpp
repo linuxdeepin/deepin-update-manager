@@ -2,8 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "dumdbusadaptor.h"
-#include "updatemanager.h"
+#include "ManagerAdaptor.h"
 
 #include <systemd/sd-daemon.h>
 
@@ -48,18 +47,9 @@ int main(int argc, char *argv[])
 
     QDBusConnection connection = QDBusConnection::systemBus();
 
-    auto dum = new UpdateManager(dumListRemoteRefsStdoutFd,dumUpgradeStdoutFd);
-    DumDbusAdaptor adaptor(dum);
+    ManagerAdaptor adaptor(dumListRemoteRefsStdoutFd, dumUpgradeStdoutFd, connection);
+    connection.registerService("org.deepin.UpdateManager1");
+    connection.registerObject(ADAPTOR_PATH, &adaptor, QDBusConnection::ExportScriptableContents);
 
-    bool dumRegister = connection.registerService(DBUS_SERVICE_NAME);
-    if (!dumRegister) {
-        qWarning() << "deepin-update-manager dbus service register failed:" << connection.lastError();
-        return EXIT_FAILURE;
-    }
-    bool dumObjRegister = connection.registerObject(DBUS_PATH,DBUS_INTERFACE_NAME, dum);
-    if (!dumObjRegister) {
-        qWarning() << "deepin-update-manager dbus object register failed:" << connection.lastError();
-        return EXIT_FAILURE;
-    }
     return a.exec();
 }
