@@ -15,6 +15,7 @@ static const QString SYSTEMD1_SERVICE = "org.freedesktop.systemd1";
 static const QString SYSTEMD1_MANAGER_PATH = "/org/freedesktop/systemd1";
 
 static const QString STATE_IDEL = "idle";
+static const QString STATE_CHECKING = "checking";
 static const QString STATE_UPGRADING = "upgrading";
 static const QString STATE_FAILED = "failed";
 static const QString STATE_SUCCESS = "success";
@@ -58,6 +59,7 @@ ManagerAdaptor::ManagerAdaptor(int listRemoteRefsFd,
           SYSTEMD1_SERVICE, SYSTEMD1_MANAGER_PATH, bus, this))
     , m_dumUpgradeUnit(nullptr)
     , m_state(STATE_IDEL)
+    , m_idle(new Idle)
 {
     qRegisterMetaType<Progress>("Progress");
     qDBusRegisterMetaType<Progress>();
@@ -117,10 +119,11 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
         m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
         return;
     }
-
+    m_idle->Inhibit(STATE_CHECKING);
     auto reply1 = dumListRemoteRefsUnit->Start("replace");
     reply1.waitForFinished();
     if (reply1.isError()) {
+        m_idle->UnInhibit(STATE_CHECKING);
         m_bus.send(message.createErrorReply(
             QDBusError::InternalError,
             QString("Start %1 failed: %2").arg(unit).arg(reply1.error().message())));
@@ -128,6 +131,7 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
     }
 
     if (!m_listRemoteRefsStdoutServer->waitForNewConnection(5000)) {
+        m_idle->UnInhibit(STATE_CHECKING);
         m_bus.send(message.createErrorReply(QDBusError::InternalError,
                                             QString("WaitForNewConnection failed")));
         return;
@@ -138,6 +142,7 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
     socket->waitForDisconnected();
     auto output = socket->readAll();
     socket->deleteLater();
+    m_idle->UnInhibit(STATE_CHECKING);
 
     auto remoteRefs = output.trimmed().split('\n');
     if (remoteRefs.size() < 1) {
@@ -267,6 +272,7 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
         return;
     }
 
+    m_idle->Inhibit(STATE_UPGRADING);
     m_bus.connect(SYSTEMD1_SERVICE,
                   m_dumUpgradeUnit->path(),
                   "org.freedesktop.DBus.Properties",
@@ -279,6 +285,7 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
     auto reply1 = m_dumUpgradeUnit->Start("replace");
     reply1.waitForFinished();
     if (reply1.isError()) {
+        m_idle->UnInhibit(STATE_UPGRADING);
         m_bus.send(message.createErrorReply(
             QDBusError::InternalError,
             QString("Start %1 failed: %2").arg(unit).arg(reply1.error().message())));
@@ -326,6 +333,9 @@ void ManagerAdaptor::onDumUpgradeUnitPropertiesChanged(const QString &interfaceN
         } else {
             qWarning() << "unknown activeState:" << activeState;
         }
+    }
+    if (m_state == STATE_SUCCESS || m_state == STATE_FAILED) {
+        m_idle->UnInhibit(STATE_UPGRADING);
     }
 }
 
