@@ -10,6 +10,8 @@
 #include <QLocalServer>
 #include <QObject>
 
+#include "Idle.h"
+
 #define ADAPTOR_PATH "/org/deepin/UpdateManager1"
 
 struct Progress
@@ -63,6 +65,7 @@ private:
 
     bool m_upgradable;
     QString m_state;
+    Idle *m_idle;
 
 private slots:
     void onDumUpgradeUnitPropertiesChanged(const QString &interfaceName,

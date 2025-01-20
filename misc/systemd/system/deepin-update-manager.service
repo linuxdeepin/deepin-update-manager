@@ -11,3 +11,6 @@ FileDescriptorStorePreserve=yes
 ExecStart=/usr/libexec/deepin-update-manager
 
 ReadOnlyPath=/usr/ostree-parent
+
+[Install]
+WantedBy=multi-user.target
