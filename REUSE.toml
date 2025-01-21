@@ -10,13 +10,13 @@ SPDX-FileCopyrightText = "None"
 SPDX-License-Identifier = "CC0-1.0"
 
 [[annotations]]
-path = ["rpm/**", "debian/**", "archlinux/**"]
+path = ["rpm/**", "debian/**", "archlinux/**", "misc/**"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "None"
 SPDX-License-Identifier = "CC0-1.0"
 
 [[annotations]]
-path = ["CMakeLists.txt", "**/CMakeLists.txt", "**.cmake", "meson.build", "**/meson.build", ".gitignore", ".clang-format", ".editorconfig"]
+path = ["CMakeLists.txt", "**/CMakeLists.txt", "**.cmake", "meson.build", "**/meson.build", ".gitignore", ".clang-format", ".editorconfig", "REUSE.toml"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "None"
 SPDX-License-Identifier = "CC0-1.0"
