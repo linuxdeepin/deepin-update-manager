@@ -26,6 +26,8 @@ static const QByteArray OSTREE_DEFAULT_REMOTE_NAME = "default";
 static const QString ACTION_ID_CHECK_UPGRADE = "org.deepin.UpdateManager.check-upgrade";
 static const QString ACTION_ID_UPGRADE = "org.deepin.UpdateManager.upgrade";
 
+static const QString DUM_STATE_FILE = "/tmp/dum-status.ini";
+
 QDBusArgument &operator<<(QDBusArgument &argument, const Progress &progress)
 {
     argument.beginStructure();
@@ -59,11 +61,18 @@ ManagerAdaptor::ManagerAdaptor(int listRemoteRefsFd,
           SYSTEMD1_SERVICE, SYSTEMD1_MANAGER_PATH, bus, this))
     , m_dumUpgradeUnit(nullptr)
     , m_state(STATE_IDEL)
+    , m_upgradable(false)
     , m_idle(new Idle)
 {
     qRegisterMetaType<Progress>("Progress");
     qDBusRegisterMetaType<Progress>();
 
+    m_settings = new QSettings(DUM_STATE_FILE, QSettings::IniFormat);
+    QFile stateFile(DUM_STATE_FILE);
+    if (stateFile.exists()) {
+        // 如果文件存在，则说明是空闲退出且没有重启过。读取settings配置恢复之前的状态
+        loadStatus();
+    }
     m_listRemoteRefsStdoutServer->listen(listRemoteRefsFd);
 
     m_upgradeStdoutServer->listen(upgradeStdoutFd);
@@ -79,9 +88,11 @@ ManagerAdaptor::ManagerAdaptor(int listRemoteRefsFd,
     });
 
     connect(this, &ManagerAdaptor::stateChanged, this, [this](const QString &state) {
+        m_settings->setValue("state", state);
         sendPropertyChanged("state", state);
     });
     connect(this, &ManagerAdaptor::upgradableChanged, this, [this](bool upgradable) {
+        m_settings->setValue("upgradable", upgradable);
         sendPropertyChanged("upgradable", upgradable);
     });
 }
@@ -95,7 +106,7 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
         return;
     }
 
-    if (m_state != STATE_IDEL && m_state != STATE_FAILED) {
+    if (m_state == STATE_UPGRADING) {
         m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
         return;
     }
@@ -204,6 +215,7 @@ void ManagerAdaptor::checkUpgrade(const QDBusMessage &message)
     bool upgradable = lastBranchInfo.valid();
     if (upgradable) {
         m_remoteBranch = lastBranchInfo.toString();
+        m_settings->setValue("remoteBranch", m_remoteBranch);
     }
     if (m_upgradable != upgradable) {
         m_upgradable = upgradable;
@@ -227,7 +239,10 @@ void ManagerAdaptor::upgrade(const QDBusMessage &message)
         return;
     }
 
-    if (m_state != STATE_IDEL && m_state != STATE_FAILED) {
+   if (m_state == STATE_SUCCESS) {
+        qInfo() << "Upgrade success, need reboot";
+        return;
+    } else if (m_state == STATE_CHECKING || m_state == STATE_UPGRADING) {
         m_bus.send(message.createErrorReply(QDBusError::AccessDenied, "An upgrade is in progress"));
         return;
     }
@@ -382,4 +397,13 @@ bool ManagerAdaptor::checkAuthorization(const QString &actionId, const QString &
     }
 
     return result == PolkitQt1::Authority::Result::Yes;
+}
+
+void ManagerAdaptor::loadStatus()
+{
+    if (m_settings) {
+        m_state = m_settings->value("state",STATE_IDEL).toString();
+        m_upgradable = m_settings->value("upgradable",false).toBool();
+        m_remoteBranch = m_settings->value("remoteBranch","").toString();
+    }
 }

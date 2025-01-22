@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: None
+#
+# SPDX-License-Identifier: CC0-1.0
+
 cmake_minimum_required(VERSION 3.16.0)
 project(deepin-update-manager
     VERSION 0.1.0
