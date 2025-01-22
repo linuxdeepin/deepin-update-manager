@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: None
+#
+# SPDX-License-Identifier: CC0-1.0
+
 set(BIN_NAME deepin-update-manager)
 
 set(DUM_SOURCES

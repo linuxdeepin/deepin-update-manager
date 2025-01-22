@@ -6,11 +6,11 @@
 
 #include "SystemdManagerInterface.h"
 #include "SystemdUnitInterface.h"
+#include "Idle.h"
 
 #include <QLocalServer>
 #include <QObject>
-
-#include "Idle.h"
+#include <QSettings>
 
 #define ADAPTOR_PATH "/org/deepin/UpdateManager1"
 
@@ -66,6 +66,7 @@ private:
     bool m_upgradable;
     QString m_state;
     Idle *m_idle;
+    QSettings *m_settings;
 
 private slots:
     void onDumUpgradeUnitPropertiesChanged(const QString &interfaceName,
@@ -76,4 +77,5 @@ private:
     void parseUpgradeStdoutLine(const QByteArray &line);
     void sendPropertyChanged(const QString &property, const QVariant &value);
     bool checkAuthorization(const QString &actionId, const QString &service) const;
+    void loadStatus();
 };
