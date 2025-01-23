@@ -1,3 +1,10 @@
+deepin-update-manager (1.0.3) unstable; urgency=medium
+
+  * feat: 空闲自动退出后，保存当前状态，下一次打开控制中心能读取到之前的状态
+  * feat: 添加更新服务空闲1分钟退出
+
+ -- fuleyi <fuleyi@uniontech.com>  Thu, 23 Jan 2025 10:25:01 +0800
+
 deepin-update-manager (1.0.2) unstable; urgency=medium
 
   * fix: failed to check upgrade
