@@ -4,12 +4,11 @@
 
 #pragma once
 
-#include "SystemdManagerInterface.h"
-#include "SystemdUnitInterface.h"
 #include "Idle.h"
 
-#include <QLocalServer>
 #include <QObject>
+#include <QDBusArgument>
+#include <QDBusConnection>
 #include <QSettings>
 
 #define ADAPTOR_PATH "/org/deepin/UpdateManager1"
@@ -57,25 +56,17 @@ signals:
 
 private:
     QDBusConnection m_bus;
-    QLocalServer *m_listRemoteRefsStdoutServer;
-    QLocalServer *m_upgradeStdoutServer;
-    org::freedesktop::systemd1::Manager *m_systemdManager;
-    org::freedesktop::systemd1::Unit *m_dumUpgradeUnit;
+    int m_listRemoteRefsFd;
+    int m_upgradeStdoutFd;    
     QString m_remoteBranch;
-
     bool m_upgradable;
     QString m_state;
+
     Idle *m_idle;
     QSettings *m_settings;
 
-private slots:
-    void onDumUpgradeUnitPropertiesChanged(const QString &interfaceName,
-                                           const QVariantMap &changedProperties,
-                                           const QStringList &invalidatedProperties);
-
 private:
-    void parseUpgradeStdoutLine(const QByteArray &line);
     void sendPropertyChanged(const QString &property, const QVariant &value);
-    bool checkAuthorization(const QString &actionId, const QString &service) const;
-    void loadStatus();
+    void loadStatusFromFile();
+    void saveStatusToFile();
 };
