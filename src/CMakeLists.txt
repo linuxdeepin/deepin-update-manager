@@ -12,6 +12,13 @@ set(DUM_SOURCES
     Branch.cpp
     Idle.cpp
     Idle.h
+    common.h
+    abstracttask.h
+    abstracttask.cpp
+    checkupgradetask.h
+    checkupgradetask.cpp
+    upgradetask.h
+    upgradetask.cpp
 )
 
 qt_add_dbus_interface(DUM_SOURCES org.freedesktop.systemd1.Manager.xml SystemdManagerInterface)

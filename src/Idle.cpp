@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "Idle.h"
+#include "common.h"
 
 #include <QCoreApplication>
 
@@ -10,15 +11,15 @@ Idle::Idle(QObject *parent)
     : QObject(parent)
 {
     m_timer = new QTimer(this);
-    connect(m_timer,  &QTimer::timeout, this, &Idle::onTimeout);
-    m_timer->start(DUM_AUTO_IDLE_TIMEOUT);
-}
+    m_timer->setInterval(DUM_AUTO_IDLE_TIMEOUT);
 
-void Idle::onTimeout() const
-{
-    if (m_reasons.isEmpty()) {
-        QCoreApplication::quit();
-    }
+    connect(m_timer,  &QTimer::timeout, this, [this] {
+        if (m_reasons.isEmpty()) {
+            QCoreApplication::quit();
+        }
+    });
+
+    handleInhibit();
 }
 
 void Idle::Inhibit(const QString& task)
