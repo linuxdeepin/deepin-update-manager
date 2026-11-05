@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2024 UnionTech Software Technology Co., Ltd.
+// SPDX-FileCopyrightText: 2024-2026 UnionTech Software Technology Co., Ltd.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,6 +9,7 @@
 #include <PolkitQt1/Authority>
 
 #include <QDBusObjectPath>
+#include <QDebug>
 #include <QLocalSocket>
 
 static const QString SYSTEMD1_SERVICE = "org.freedesktop.systemd1";
